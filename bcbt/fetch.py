@@ -36,7 +36,7 @@ import requests
 
 from . import store
 
-# Dukascopy instrument codes for the two index CFDs.
+# Dukascopy instrument codes.
 INSTRUMENTS = {
     "SPX500": "USA500IDXUSD",
     "NAS100": "USATECHIDXUSD",
@@ -44,12 +44,35 @@ INSTRUMENTS = {
     "UK100": "GBRIDXGBP",
     "XAUUSD": "XAUUSD",
     "EURUSD": "EURUSD",
+    "GBPUSD": "GBPUSD",
+    "USDJPY": "USDJPY",
+    "USDCHF": "USDCHF",
+    "AUDUSD": "AUDUSD",
+    "USDCAD": "USDCAD",
+    "NZDUSD": "NZDUSD",
 }
 
-SCALE = 1000.0
+# Prices arrive as integers scaled by the instrument's point value, and the
+# point value is NOT the same everywhere. Indices and JPY pairs quote to
+# three decimals; the other majors quote to five. Getting this wrong does not
+# raise -- it silently moves EURUSD to 103.831 and every ATR with it.
+DEFAULT_SCALE = 1000.0
+SCALES = {
+    "EURUSD": 1e5, "GBPUSD": 1e5, "USDCHF": 1e5,
+    "AUDUSD": 1e5, "USDCAD": 1e5, "NZDUSD": 1e5,
+    "USDJPY": 1e3,          # JPY pairs quote to three decimals
+    "XAUUSD": 1e3,
+}
+
+
 REC = 24
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 BASE = "https://datafeed.dukascopy.com/datafeed"
+
+
+def scale_for(symbol):
+    """Point value for one instrument's integer-encoded prices."""
+    return SCALES.get(symbol, DEFAULT_SCALE)
 
 
 def url(inst, day, side="BID"):
@@ -74,7 +97,7 @@ def _one(session, inst, day, side, tries=7, timeout=45):
     raise RuntimeError(f"gave up on {u}")
 
 
-def _decode(raw, day):
+def _decode(raw, day, scale=DEFAULT_SCALE):
     if not raw:
         return []
     body = lzma.LZMADecompressor().decompress(raw)
@@ -85,11 +108,11 @@ def _decode(raw, day):
         if o == 0 and c == 0 and lo == 0 and hi == 0:
             continue
         rows.append(((base + dt.timedelta(seconds=t)),
-                     o / SCALE, hi / SCALE, lo / SCALE, c / SCALE, float(v)))
+                     o / scale, hi / scale, lo / scale, c / scale, float(v)))
     return rows
 
 
-def fetch_range(symbols, start, end, sides=("BID",), workers=6, quiet=False):
+def fetch_range(symbols, start, end, sides=("BID",), workers=8, quiet=False):
     """Pull every weekday in [start, end] for each symbol and side."""
     jobs = []
     d = start
@@ -106,7 +129,8 @@ def fetch_range(symbols, start, end, sides=("BID",), workers=6, quiet=False):
     def work(job):
         sym, inst, day, side = job
         try:
-            return sym, side, day, _decode(_one(session, inst, day, side), day)
+            return sym, side, day, _decode(
+                _one(session, inst, day, side), day, scale_for(sym))
         except Exception:
             return sym, side, day, None
 
@@ -166,7 +190,7 @@ def main(argv=None):
     p.add_argument("--end", default=None, help="default: yesterday")
     p.add_argument("--ask", action="store_true",
                    help="also fetch the ask side, to measure the spread")
-    p.add_argument("--workers", type=int, default=6)
+    p.add_argument("--workers", type=int, default=8)
     p.add_argument("--out", default=store.PARQUET)
     a = p.parse_args(argv)
 
