@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bcbt"
+version = "0.1.0"
+description = "Intraday index backtest simulator with minute-resolution fills"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0,<2.6",        # numba 0.67 will not build against 2.6
+    "pandas>=2.2",
+    "pyarrow>=16",
+    "numba>=0.60",
+    "scipy>=1.11",
+    "statsmodels>=0.14",
+    "pandas_market_calendars>=4.4",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+extras = ["polars>=1.0", "duckdb>=1.0", "matplotlib>=3.8", "tqdm", "joblib",
+          "dukascopy-python", "yfinance"]
+dev = ["pytest>=8", "ruff"]
+
+[project.scripts]
+bcbt-fetch = "bcbt.fetch:main"
+
+[tool.setuptools.packages.find]
+include = ["bcbt*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+# `l` is the low in OHLC; that convention is clearer here than
+# renaming it to satisfy a linter.
+ignore = ["E501", "E741"]

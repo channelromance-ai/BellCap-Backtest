@@ -1,0 +1,17 @@
+# Bar data is large and re-downloadable; the fetcher rebuilds it.
+data/*.parquet
+data/*.db
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Run outputs
+out/
+*.csv
+*.pkl
+*.png

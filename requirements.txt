@@ -1,0 +1,31 @@
+# Backtest simulator dependencies, verified working together on
+# Python 3.13.15 / Windows. Versions are the ones actually tested, not the
+# latest available, because numba tracks numpy closely and numpy 2.6 will
+# break it (numba 0.67 pins numpy<2.6).
+
+# --- data handling
+numpy==2.5.2
+pandas==3.0.5
+pyarrow==24.0.0            # parquet: 6x smaller and 10x faster than sqlite here
+polars==1.44.2             # fast frames for anything pandas makes awkward
+duckdb==1.5.5              # SQL straight over parquet, no load step
+
+# --- speed
+numba==0.67.0              # JIT for the bar-walking loops; 64x on stop resolution
+
+# --- statistics
+scipy==1.18.1
+statsmodels==0.15.0        # HAC/Newey-West standard errors for overlapping trades
+
+# --- market structure
+pandas_market_calendars==5.4.0   # 211 calendars incl. NYSE, LSE, CME_Equity
+
+# --- data sources (both free, no API key)
+dukascopy-python                 # bid AND ask history for CFDs/FX
+yfinance==1.6.0                  # cross-checking only; 5m history is 60 days
+
+# --- plumbing
+matplotlib==3.11.1
+tqdm==4.70.1               # progress on long downloads
+joblib==1.6.0              # disk memoisation + easy parallelism
+requests==2.34.2
