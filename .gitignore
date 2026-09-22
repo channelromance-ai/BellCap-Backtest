@@ -15,3 +15,6 @@ out/
 *.csv
 *.pkl
 *.png
+
+# Local credentials, never committed.
+.env
