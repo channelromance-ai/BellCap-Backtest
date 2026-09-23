@@ -44,6 +44,9 @@ def build(ticker: str, vix: pd.Series | None = None) -> pd.DataFrame:
     out["sym"] = ticker
     out["open"] = d["open"]
     out["close"] = d["close"]
+    # Kept because dollar volume is what decides the spread, and the spread
+    # is what decides whether an effect this size can be traded at all.
+    out["volume"] = d["volume"]
 
     # --- the two things to be explained
     # Held from tonight's close to tomorrow's open.
