@@ -145,7 +145,24 @@ def run_portfolio(px: pd.DataFrame, weight_fn, freq="M", cost_bps=5.0,
     return out
 
 
-def summarise(rec: pd.DataFrame, label="") -> dict:
+def summarise(rec: pd.DataFrame, label="", cash_ret: pd.Series | None = None
+              ) -> dict:
+    """
+    Score a portfolio's record.
+
+    `cash_ret` is the daily return on cash, and passing it matters more than
+    it looks. Return per unit of wobble computed on RAW returns rewards any
+    rule that sits in cash, because cash pays interest and barely moves. Run
+    that way a cash-only portfolio scores 14 and wins everything, which is
+    how this was found. Worse, it quietly flattered every rule that spends
+    time out of the market: the trend rule's apparent advantage over buying
+    and holding across thirteen foreign markets was 13 of 13 on raw returns
+    and 6 of 13 -- a coin toss -- once cash was subtracted.
+
+    Pass the cash series whenever the comparison is between rules that hold
+    different amounts of cash. Leaving it out keeps the old behaviour, which
+    is only safe when everything being compared is always fully invested.
+    """
     r = rec["net"].fillna(0.0)
     r = r[r.index >= r.ne(0).idxmax()]          # drop the warm-up zeros
     if len(r) < 250:
@@ -154,15 +171,19 @@ def summarise(rec: pd.DataFrame, label="") -> dict:
     peak = eq.cummax()
     years = len(r) / 252.0
     ann = eq.iloc[-1] ** (1.0 / years) - 1.0
-    vol = r.std(ddof=1) * np.sqrt(252)
     dd = (eq / peak - 1.0).min()
     downside = r[r < 0].std(ddof=1) * np.sqrt(252)
+
+    # The reward for taking risk is measured above cash, not above zero.
+    ex = r if cash_ret is None else r - cash_ret.reindex(r.index).fillna(0.0)
+    vol = ex.std(ddof=1) * np.sqrt(252)
+    reward = (ann if cash_ret is None else ex.mean() * 252)
     return dict(
         label=label,
         years=round(years, 1),
         annual_pct=100 * ann,
-        vol_pct=100 * vol,
-        risk_adj=ann / vol if vol > 0 else np.nan,
+        vol_pct=100 * r.std(ddof=1) * np.sqrt(252),
+        risk_adj=reward / vol if vol > 0 else np.nan,
         sortino=ann / downside if downside > 0 else np.nan,
         worst_fall_pct=100 * dd,
         calmar=ann / abs(dd) if dd < 0 else np.nan,
