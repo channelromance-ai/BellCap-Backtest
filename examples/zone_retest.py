@@ -66,14 +66,35 @@ def bars(m1, minutes):
         {"o": "first", "h": "max", "l": "min", "c": "last"}).dropna()
 
 
-def signals(sym, m1, entry_tf=5, zone_bars=4, width=1.5, buffer_frac=0.1):
+def signals(sym, m1, entry_tf=5, zone_bars=4, width=1.5, buffer_frac=0.1,
+            break_atr=0.5, bounce="close_out", min_cost_r=0.0):
     """
     Every entry the rule produces: when, which way, at what price, with
     what stop. Finding these is the slow part and none of it depends on how
     the trade is then managed, so it is done once and reused.
+
+    The sequence is fixed, and every step must complete before the next is
+    looked for:
+
+      1. An hourly candle CLOSES outside the zone, by `break_atr` ATRs, so
+         a one-tick poke through does not count as a break.
+      2. On the faster chart, a candle CLOSES back INSIDE the zone. Price
+         has to actually return and trade there -- a wick through is not
+         enough, because a wick is a price that was rejected immediately.
+      3. A later candle CLOSES back OUTSIDE the zone again, on the same
+         side as the original break. That close is the signal.
+      4. Entry is the open of the bar after it.
+
+    If instead price closes clean through the far side, the level has
+    failed and the zone is abandoned rather than waited on.
+
+    `min_cost_r` drops trades where the zone is so narrow that the spread
+    would be more than this share of the risk. Those cannot pay for
+    themselves whatever happens next.
     """
     h = Z.hourly(m1)
-    z = Z.find_zones(h, bars=zone_bars, max_width_atr=width)
+    z = Z.find_zones(h, bars=zone_bars, max_width_atr=width,
+                     break_atr=break_atr)
     if z.empty:
         return pd.DataFrame()
     lo_tf = bars(m1, entry_tf)
@@ -89,23 +110,28 @@ def signals(sym, m1, entry_tf=5, zone_bars=4, width=1.5, buffer_frac=0.1):
         if len(seg) < 3:
             continue
 
-        # Step 3: price comes back and touches the zone.
-        touch = (seg["l"] <= zn.top) if zn.side == Z.UP else (seg["h"] >= zn.bot)
-        if not touch.any():
-            continue
-        t0 = int(np.argmax(touch.to_numpy()))
-
-        # Step 4: the reaction -- a bar closing back out of the zone.
+        # Steps 2 and 3: a close back inside the zone, then a close back
+        # outside it. Closes only -- a wick into the zone is a price that
+        # was refused, not one the market accepted.
         sig = None
-        for k in range(t0, len(seg) - 1):
+        been_inside = False
+        prev_out = False
+        for k in range(len(seg) - 1):
             c = seg["c"].iloc[k]
-            if zn.side == Z.UP and c > zn.top:
-                sig = k
-                break
-            if zn.side == Z.DOWN and c < zn.bot:
-                sig = k
-                break
-            # If it closes clean through, the level failed; stop watching.
+            inside = zn.bot <= c <= zn.top
+            if inside:
+                been_inside = True
+                prev_out = False
+                continue
+
+            back_out = (c > zn.top) if zn.side == Z.UP else (c < zn.bot)
+            if been_inside and back_out:
+                if bounce != "two_bar" or prev_out:
+                    sig = k
+                    break
+            prev_out = back_out
+
+            # Closed clean through the far side: the level did not hold.
             if zn.side == Z.UP and c < zn.bot:
                 break
             if zn.side == Z.DOWN and c > zn.top:
@@ -127,10 +153,17 @@ def signals(sym, m1, entry_tf=5, zone_bars=4, width=1.5, buffer_frac=0.1):
         risk = abs(entry - stop)
         if risk <= 0 or (d > 0 and stop >= entry) or (d < 0 and stop <= entry):
             continue
+        # Skip trades the spread cannot be paid out of.
+        if min_cost_r > 0 and (COST_PTS[sym] / risk) > min_cost_r:
+            continue
 
         rows.append(dict(sym=sym, i=j, entry_ts=m_idx[j], d=d, entry=entry,
                          stop=stop, risk=risk))
-    return pd.DataFrame(rows)
+    # Always the same columns, even with nothing in it: a strict setting can
+    # legitimately produce no trades, and a bare empty frame has no columns
+    # for the caller to filter on.
+    return pd.DataFrame(rows, columns=["sym", "i", "entry_ts", "d", "entry",
+                                       "stop", "risk"])
 
 
 def evaluate(sym, m1, sigs, rr=2.0, be_at=0.0, max_hold_min=240):
