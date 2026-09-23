@@ -18,3 +18,5 @@ out/
 
 # Local credentials, never committed.
 .env
+
+data/*.parquet
