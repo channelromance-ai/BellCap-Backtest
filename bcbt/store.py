@@ -30,6 +30,35 @@ def path(name="m1.parquet"):
     return os.path.join(DATA, name)
 
 
+def repair_bars(df, tol_bp=5.0):
+    """
+    Force open and close back inside the bar's own high-low range.
+
+    Vendors round to a fixed number of decimals, and that occasionally puts
+    a close a fraction of a cent above its own high. Twenty such bars exist
+    in the ETF panel here, each wrong by about a tenth of a basis point --
+    harmless in size, but it breaks an invariant the fill engine depends on
+    when deciding whether a level was reachable.
+
+    Only rounding-sized violations are corrected. Anything bigger than
+    `tol_bp` is a real data fault and is reported rather than quietly
+    flattened, because silently repairing a genuinely broken bar is how bad
+    prices become backtest profits.
+    """
+    out = df.copy()
+    hi, lo = out["h"], out["l"]
+    worst = 0.0
+    big = 0
+    for col in ("o", "c"):
+        over = (out[col] - hi).clip(lower=0)
+        under = (lo - out[col]).clip(lower=0)
+        err_bp = 1e4 * (over + under) / out[col].abs().replace(0, np.nan)
+        worst = max(worst, float(err_bp.max() or 0.0))
+        big += int((err_bp > tol_bp).sum())
+        out[col] = out[col].clip(lower=lo, upper=hi)
+    return out, dict(worst_bp=worst, beyond_tolerance=big)
+
+
 def write(df, dest=PARQUET):
     """Persist a tidy sym/ts/o/h/l/c/v frame."""
     os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -39,6 +68,10 @@ def write(df, dest=PARQUET):
     for c in PRICE_COLS:
         out[c] = out[c].astype("float64")
     out = out.sort_values(["sym", "ts"]).reset_index(drop=True)
+    out, rep = repair_bars(out)
+    if rep["beyond_tolerance"]:
+        print(f"  WARNING: {rep['beyond_tolerance']} bars are outside their "
+              f"own high-low range by more than rounding")
     out.to_parquet(dest, engine="pyarrow", compression="zstd", index=False)
     return dest
 
