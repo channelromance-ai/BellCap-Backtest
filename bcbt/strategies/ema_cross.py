@@ -148,7 +148,7 @@ def run(sym, m1, h, cost_pts, use_be=True, be_mult=1.0,
             if j1 >= j0:
                 # The breakeven latch has to survive from one hour to the
                 # next, or the position re-earns its protection every bar.
-                xi, px, code, amb, cur_stop, armed = resolve(
+                xi, px, code, amb, cur_stop, armed, _ = resolve(
                     o, hi, lo, j0, j1, pos, entry, cur_stop, risk,
                     0.0, be_mult if use_be else 0.0, armed)
             else:

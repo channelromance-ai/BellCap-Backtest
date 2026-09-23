@@ -39,7 +39,7 @@ REASONS = {OPEN: "open", STOP: "stop", TARGET: "target", BREAKEVEN: "be"}
 
 @njit(cache=True)
 def resolve(o, h, l, i0, i1, d, entry, stop, risk, target, be_mult,
-            armed_in=False):
+            armed_in=False, trail_mult=0.0, best_in=0.0):
     """
     Walk 1-minute bars i0..i1 for one open position.
 
@@ -64,15 +64,23 @@ def resolve(o, h, l, i0, i1, d, entry, stop, risk, target, be_mult,
     be_mult : float
         Move the stop to entry once the trade is this many R onside.
         0.0 disables the breakeven move.
+    trail_mult : float
+        Follow price with a stop this many R behind the best level reached
+        since entry. 0.0 disables trailing. The trail only ever tightens.
+    best_in : float
+        Best price seen so far, for a trade being resolved in pieces. Pass
+        the value returned by the previous call; 0.0 means "start from the
+        entry".
 
     Returns
     -------
-    (exit_index, exit_price, reason, ambiguous, cur_stop, armed)
+    (exit_index, exit_price, reason, ambiguous, cur_stop, armed, best)
         exit_index is -1 and reason is OPEN if the window ended with the
-        position still open; cur_stop and armed carry the latch forward.
+        position still open; cur_stop, armed and best carry forward.
     """
     cur_stop = entry if armed_in else stop
     armed = armed_in
+    best = best_in if best_in != 0.0 else entry
 
     for j in range(i0, i1 + 1):
         if d > 0:
@@ -85,21 +93,21 @@ def resolve(o, h, l, i0, i1, d, entry, stop, risk, target, be_mult,
         # One bar holding both levels cannot say which came first, so the
         # answer always goes against the position.
         if hit_stop and hit_tgt:
-            return j, cur_stop, (BREAKEVEN if armed else STOP), True, cur_stop, armed
+            return j, cur_stop, (BREAKEVEN if armed else STOP), True, cur_stop, armed, best
 
         if hit_stop:
             if d > 0:
                 px = o[j] if o[j] < cur_stop else cur_stop
             else:
                 px = o[j] if o[j] > cur_stop else cur_stop
-            return j, px, (BREAKEVEN if armed else STOP), False, cur_stop, armed
+            return j, px, (BREAKEVEN if armed else STOP), False, cur_stop, armed, best
 
         if hit_tgt:
             if d > 0:
                 px = o[j] if o[j] > target else target
             else:
                 px = o[j] if o[j] < target else target
-            return j, px, TARGET, False, cur_stop, armed
+            return j, px, TARGET, False, cur_stop, armed, best
 
         if be_mult > 0.0 and not armed:
             if d > 0:
@@ -111,11 +119,28 @@ def resolve(o, h, l, i0, i1, d, entry, stop, risk, target, be_mult,
                 cur_stop = entry
                 # The bar that armed breakeven may also have come back to it.
                 if d > 0 and l[j] <= entry:
-                    return j, entry, BREAKEVEN, False, cur_stop, armed
+                    return j, entry, BREAKEVEN, False, cur_stop, armed, best
                 if d < 0 and h[j] >= entry:
-                    return j, entry, BREAKEVEN, False, cur_stop, armed
+                    return j, entry, BREAKEVEN, False, cur_stop, armed, best
 
-    return -1, 0.0, OPEN, False, cur_stop, armed
+        if trail_mult > 0.0:
+            # Tighten behind the best level reached. Applied after this bar
+            # has been judged, so the trail never exits on the same bar that
+            # created the high it is measured from.
+            if d > 0:
+                if h[j] > best:
+                    best = h[j]
+                lifted = best - trail_mult * risk
+                if lifted > cur_stop:
+                    cur_stop = lifted
+            else:
+                if l[j] < best:
+                    best = l[j]
+                lifted = best + trail_mult * risk
+                if lifted < cur_stop:
+                    cur_stop = lifted
+
+    return -1, 0.0, OPEN, False, cur_stop, armed, best
 
 
 @njit(cache=True)
@@ -139,5 +164,5 @@ def warm():
     evaluated is not charged for the JIT.
     """
     z = np.zeros(4, np.float64)
-    resolve(z, z, z, 0, 3, 1, 1.0, 0.5, 0.5, 0.0, 0.0, False)
+    resolve(z, z, z, 0, 3, 1, 1.0, 0.5, 0.5, 0.0, 0.0, False, 0.0, 0.0)
     first_touch(z, z, 0, 3, 1, 1.0)

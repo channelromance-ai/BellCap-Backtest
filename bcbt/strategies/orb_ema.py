@@ -154,7 +154,7 @@ def run(sym, days, a, cost_pts, or_min=15, stop_mode="or", rr=1.5,
                 nxt = int(np.searchsorted(seg, t5[i] + 5, "left"))
                 seg_end = min(s["i0"] + nxt - 1, last)
                 if seg_end >= cursor:
-                    xi, p, code, amb, cur_stop, armed = resolve(
+                    xi, p, code, amb, cur_stop, armed, _ = resolve(
                         o, hi, lo, cursor, seg_end, d, entry, cur_stop,
                         risk, target, be_mult, armed)
                     if code != OPEN:
@@ -169,7 +169,7 @@ def run(sym, days, a, cost_pts, or_min=15, stop_mode="or", rr=1.5,
             if px is None:
                 px, mi, why, amb = float(a["c"][last]), last, "eod", False
         else:
-            xi, p, code, amb, _, _ = resolve(
+            xi, p, code, amb, _, _, _ = resolve(
                 o, hi, lo, j, last, d, entry, stop, risk, target, be_mult)
             if code == OPEN:
                 px, mi, why = float(a["c"][last]), last, "eod"
