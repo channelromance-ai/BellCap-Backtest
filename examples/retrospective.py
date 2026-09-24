@@ -1,7 +1,7 @@
 """
 What went wrong across everything tested here, and what to do about it.
 
-Ten strategy families have been run through this repo. None survived. That
+Sixteen strategy families have been run through this repo. None survived. That
 is a legitimate outcome, but the WAY they failed repeats, and the repetition
 is more useful than any single result.
 
@@ -64,6 +64,11 @@ RECORD = [
     ("zone retest, close entry", 1.400, 4.000),
     ("zone retest, wide zones only", 2.200, 1.800),
     ("overnight drift, every night", 5.630, 2.000),
+    # From here on, costs are The5ers' measured spread plus commission.
+    ("Asian home hours, 2024-26 only", 1.466, 0.847),
+    ("Asian home hours, 2000-26", -1.744, 0.846),
+    ("EUR/USD European morning, 2000-26", 1.895, 0.392),
+    ("EUR/USD European morning, 2021-26", 0.959, 0.392),
 ]
 
 # Every candidate that was named before the holdout was opened.
@@ -77,6 +82,12 @@ HOLDOUTS = [
     ("cross-market risk premium", "corr +0.215", "corr +0.002, signs flip"),
     ("CFD pair reversion", "+0.253%/trade", "+0.036%/trade"),
     ("zone retest", "best t 2.3 in-sample", "best t 0.18"),
+    ("zone retest, 2+ prior bounces", "52.8% at 1:1", "42.8% at 1:1"),
+    ("zone fade / failed breakout", "coin toss", "coin toss, -0.05R"),
+    ("hourly swing levels + trend", "with trend 50.7%", "50.1%, coin toss"),
+    ("daily trend, 4h swings, 15m", "43.9% at 1:1", "51.9% at 1:1, -0.01R"),
+    ("first half hour -> last", "-0.8bp", "+1.3bp, t 0.8"),
+    ("Asian home-hours currency", "+0.3bp net, 2.4y", "reversed 2000-20"),
 ]
 
 
@@ -96,6 +107,8 @@ def main() -> int:
     print("\n  Of the three that clear, one fires seven times a year, one is")
     print("  the overnight trade that needs 252 round trips, and one is the")
     print("  wide-zone filter found after the fact. None is a business.")
+    print("  The European-morning EUR/USD tilt is real over 26 years but has")
+    print("  shrunk to about 2.4x cost since 2021.")
 
     print("\n" + "=" * 94)
     print("2. EVERY PRE-COMMITTED CANDIDATE FAILED OUT OF SAMPLE")
