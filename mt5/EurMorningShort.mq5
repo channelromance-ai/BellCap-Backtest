@@ -4,7 +4,7 @@
 //| The European-morning EUR/USD short, exactly as tested in         |
 //| examples/eur_morning_late.py:                                    |
 //|                                                                  |
-//|   SELL EURUSD at 22:00 Winnipeg (05:00 server), Sun-Thu nights   |
+//|   SELL EURUSD at 22:00 Winnipeg (06:00 server), Sun-Thu nights   |
 //|   fixed lots, stop 40 pips above the fill, no target             |
 //|   CLOSE at 07:00 Winnipeg (15:00 server), whatever it is doing   |
 //|                                                                  |
@@ -17,7 +17,7 @@
 //| a CSV in the terminal's Common\Files folder.                     |
 //+------------------------------------------------------------------+
 #property copyright "BellCap-Backtest"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -26,7 +26,9 @@ input bool   DryRun            = true;     // true = log only, place no trades
 input string TradeSymbol       = "EURUSD";
 input double Lots              = 0.18;     // fixed size
 input double StopPips          = 40.0;     // stop distance above the fill
-input int    EntryHourServer   = 5;        // 05:00 server = 22:00 Winnipeg
+// v1.00 had 5 here, which is 21:00 Winnipeg: the server is 8 hours ahead
+// of Winnipeg, not 7. It traded two nights an hour early before this fix.
+input int    EntryHourServer   = 6;        // 06:00 server = 22:00 Winnipeg
 input int    ExitHourServer    = 15;       // 15:00 server = 07:00 Winnipeg
 input int    MaxLateMinutes    = 15;       // never enter later than this
 input double MaxSpreadPips     = 2.0;      // skip the night if wider
@@ -148,10 +150,18 @@ int OnInit()
       return INIT_FAILED;
      }
    double risk = DollarsFor(StopPips, Lots);
-   Log("START", StringFormat("lots %.2f stop %.0f pips = $%.2f at risk; "
-                             "entry %02d:00 server, exit %02d:00 server",
+   // Show the local times too, so a wrong hour is visible at a glance.
+   int entry_local = (EntryHourServer - ServerMinusLocal + 24) % 24;
+   int exit_local = (ExitHourServer - ServerMinusLocal + 24) % 24;
+   Log("START", StringFormat("v1.01 lots %.2f stop %.0f pips = $%.2f at "
+                             "risk; entry %02d:00 server = %02d:00 Winnipeg,"
+                             " exit %02d:00 server = %02d:00 Winnipeg",
                              Lots, StopPips, risk, EntryHourServer,
-                             ExitHourServer), Lots);
+                             entry_local, ExitHourServer, exit_local), Lots);
+   if(entry_local != 22 || exit_local != 7)
+      Log("WARNING", StringFormat("entry/exit are %02d:00/%02d:00 Winnipeg, "
+                                  "not the tested 22:00/07:00", entry_local,
+                                  exit_local));
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) && !DryRun)
       Log("WARNING", "Algo Trading is switched OFF in the terminal - "
           "no trades will be placed until it is switched on");
