@@ -17,7 +17,7 @@
 //| a CSV in the terminal's Common\Files folder.                     |
 //+------------------------------------------------------------------+
 #property copyright "BellCap-Backtest"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
 
@@ -153,7 +153,7 @@ int OnInit()
    // Show the local times too, so a wrong hour is visible at a glance.
    int entry_local = (EntryHourServer - ServerMinusLocal + 24) % 24;
    int exit_local = (ExitHourServer - ServerMinusLocal + 24) % 24;
-   Log("START", StringFormat("v1.01 lots %.2f stop %.0f pips = $%.2f at "
+   Log("START", StringFormat("v1.02 lots %.2f stop %.0f pips = $%.2f at "
                              "risk; entry %02d:00 server = %02d:00 Winnipeg,"
                              " exit %02d:00 server = %02d:00 Winnipeg",
                              Lots, StopPips, risk, EntryHourServer,
@@ -176,8 +176,23 @@ void OnDeinit(const int reason)
                             reason));
   }
 
+//--- "still alive" file for the 21:40 Winnipeg watchdog (mt5/watchdog.ps1).
+//--- A missing or stale file means the expert is not running.
+void Heartbeat()
+  {
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
+   int h = FileOpen("EurMorningShort_heartbeat.txt",
+                    FILE_WRITE | FILE_TXT | FILE_ANSI | FILE_COMMON);
+   if(h == INVALID_HANDLE)
+      return;
+   FileWrite(h, TimeToString(TimeTradeServer(), TIME_DATE | TIME_SECONDS),
+             DryRun ? "dry-run" : "live");
+   FileClose(h);
+  }
+
 void OnTick() { Check(); }
-void OnTimer() { Check(); }
+void OnTimer() { Heartbeat(); Check(); }
 
 //+------------------------------------------------------------------+
 void Check()
