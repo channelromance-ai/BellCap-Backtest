@@ -247,6 +247,20 @@ bool FindPosition(string sym, long magic, ulong &ticket)
 
 bool CloseWithRetry(ulong ticket, long magic, string leg)
   {
+   // In practice mode nothing real is touched -- not even a position that
+   // carries this leg's magic number (the old EurMorningShort used the same
+   // EUR number, and may still be running alongside during the trial).
+   if(DryRun)
+     {
+      static ulong logged = 0;
+      if(logged != ticket)
+        {
+         Log(leg, "DRY-CLOSE", StringFormat("would close position %I64u",
+                                            ticket));
+         logged = ticket;
+        }
+      return true;
+     }
    trade.SetExpertMagicNumber(magic);
    for(int k = 0; k < 3; k++)
      {
