@@ -23,7 +23,7 @@
 //| Only positions with this expert's two magic numbers are touched. |
 //+------------------------------------------------------------------+
 #property copyright "BellCap-Backtest"
-#property version   "2.00"
+#property version   "2.01"
 
 #include <Trade\Trade.mqh>
 
@@ -58,6 +58,16 @@ input int    SpxCloseHour      = 23;       // close at 23:45 server latest
 input int    SpxCloseMinute    = 45;
 input double SpxMaxSpreadPts   = 2.0;      // index points
 input long   SpxMagic          = 26092502;
+// US holidays / half-days, as server dates: SP500 closes early (verified
+// 7 Sep 2026: last price 19:59 server), so the leg closes at 19:45 server
+// (11:45 Winnipeg) on these days. UPDATE EVERY YEAR.
+input string SpxEarlyCloseDays = "2026.11.26,2026.11.27,2026.12.24,"
+                                 "2027.01.18,2027.02.15,2027.03.26,"
+                                 "2027.05.31,2027.06.18,2027.07.05,"
+                                 "2027.09.06,2027.11.25,2027.11.26,"
+                                 "2027.12.24";
+input int    SpxEarlyCloseHour = 19;
+input int    SpxEarlyCloseMin  = 45;
 
 input int    MaxLateMinutes    = 30;       // never enter later than this
 input double SlippageAllowPips = 2.0;
@@ -264,7 +274,7 @@ int OnInit()
    int spx_l = (SpxEntryHour - ServerMinusLocal + 24) % 24;
    int spx_x = (SpxCloseHour - ServerMinusLocal + 24) % 24;
    Log("ALL", "START", StringFormat(
-          "v2.00 EUR %s %.2f lots %02d:00->%02d:00 Winnipeg | SPX %s "
+          "v2.01 EUR %s %.2f lots %02d:00->%02d:00 Winnipeg | SPX %s "
           "%.2f%% swing target %02d:00->%02d:%02d Winnipeg, stop $%.0f | "
           "floor %.0f target %.0f daily %.0f",
           EurEnabled ? "on" : "off", EurBaseLots, eur_l, eur_x,
@@ -472,13 +482,24 @@ bool SpxSignals(double &sig_today, bool &dip, int &bars_this_month,
    return sig_today > 0;
   }
 
-//--- close time today: 23:45 server, or 15 minutes before the session end
+bool EarlyCloseDay(datetime now)
+  {
+   string today = TimeToString(DayStart(now), TIME_DATE);   // "YYYY.MM.DD"
+   return StringFind(SpxEarlyCloseDays, today) >= 0;
+  }
+
+//--- close time today: 23:45 server (the market's last price is 23:49),
+//--- 19:45 on listed early-close days, or 15 minutes before the platform's
+//--- own session end if that is earlier
 datetime SpxCloseTime(datetime now)
   {
    MqlDateTime t;
    TimeToStruct(now, t);
    datetime close_at = DayStart(now) + SpxCloseHour * 3600 +
                        SpxCloseMinute * 60;
+   if(EarlyCloseDay(now))
+      close_at = DayStart(now) + SpxEarlyCloseHour * 3600 +
+                 SpxEarlyCloseMin * 60;
    datetime from, to;
    for(uint s = 0; s < 4; s++)
      {
@@ -517,15 +538,22 @@ void SpxCheck(datetime now)
    if(GlobalVariableCheck(GV_SPX) &&
       (datetime)GlobalVariableGet(GV_SPX) == today)
       return;
+   // The market reopens at 01:05 server, not 01:00 (verified on every
+   // September 2026 day). Until a price arrives from TODAY's session, the
+   // quote on screen is yesterday's last one: wait, do not trade on it.
+   MqlTick tk;
+   bool fresh = SymbolInfoTick(SpxSymbol, tk) &&
+                (datetime)tk.time >= today + SpxEntryHour * 3600;
    double bid = SymbolInfoDouble(SpxSymbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(SpxSymbol, SYMBOL_ASK);
-   if(bid <= 0 || ask - bid > SpxMaxSpreadPts)
+   if(!fresh || bid <= 0 || ask - bid > SpxMaxSpreadPts)
      {
       if(t.min >= MaxLateMinutes - 1)
         {
          GlobalVariableSet(GV_SPX, (double)today);
-         Log("SPX", "SKIP", "market not open or spread too wide for the "
-             "entry window");
+         Log("SPX", "SKIP", fresh ? "spread stayed too wide for the entry "
+             "window" : "no price from today's session by the end of the "
+             "entry window (market closed?)");
         }
       return;
      }
