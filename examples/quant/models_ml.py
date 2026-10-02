@@ -103,7 +103,7 @@ def walk_forward(X, make, target="y1", kind="clf", horizon=1, train_years=None,
     """
     def run():
         P = features(X) if rows is None else rows
-        P = P.dropna(subset=[target])
+        known = P[target].notna().to_numpy()   # labels needed to train only
         fc = feat_cols(features(X))
         dates = P.index.get_level_values("date")
         res = []
@@ -112,7 +112,7 @@ def walk_forward(X, make, target="y1", kind="clf", horizon=1, train_years=None,
             end = pd.Timestamp(f"{y + 1}-01-01")
             # purge: training labels must end before the test year begins
             cut = start - pd.tseries.offsets.BDay(horizon)
-            tr = (dates < cut)
+            tr = (dates < cut) & known
             if train_years:
                 tr &= dates >= start - pd.DateOffset(years=train_years)
             te = (dates >= start) & (dates < end)
@@ -555,6 +555,7 @@ def _torch_walk(X, build, key, win=20, epochs=4):
                     loss = lossf(net(Xtr[i]).squeeze(-1), ytr[i])
                     loss.backward()
                     opt.step()
+            net.eval()                     # no dropout when predicting
             with torch.no_grad():
                 Xte = torch.tensor(np.stack([A[t - win + 1:t + 1, s]
                                              for t, s in te]),

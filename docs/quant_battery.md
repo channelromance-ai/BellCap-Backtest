@@ -32,8 +32,17 @@ skill. Then the multiple-testing correction for having tried 359 distinct
 models. Parameters are textbook values fixed before any result was seen;
 everything that learns (ML, walk-forward, Bayesian, seasonal) is fitted
 only on data before the year it trades. A look-ahead audit
-(`examples/quant_audit.py`) re-runs every model on data cut at mid-2014 and
-checks every signal before the cut is identical.
+(`examples/quant_audit.py`) re-runs a model on data cut at mid-2014 and
+checks that every signal before the cut is identical to the full run. All
+330 non-ML models and 24 of the 34 ML and walk-forward models were audited
+(every distinct training pipeline; the other ten are different
+scikit-learn learners or blends inside an audited pipeline). The audit
+caught and this version fixes: full-sample scaling in the currency
+strength meter, the Kalman filters and three drawdown-limit sizers; a
+pairs normaliser and a NaN that wiped other pairs' positions; a random
+sampling stream in the DTW matcher; misaligned labels in the
+multi-timeframe probability model; one day of Q-learning reward across the
+train/test boundary; dropout left on when the Transformer predicted.
 
 **Result.** 16 of 359 models have a positive net Sharpe ratio and
 231 are positive before costs. 1 has
@@ -158,7 +167,7 @@ What the signal earns before the broker is paid, and what spread and overnight f
 | Cross-asset: pairs, stat arb, ranking, relative strength, macro | 48 | -0.46 | 0.14 | 0.46 | 8 |
 | Daily single-market (mean reversion, trend, breakout, volatility, regime, forecasting, technical, patterns) | 127 | -0.52 | 0.03 | 0.11 | 3 |
 | Intraday: sessions, seasonality, gaps, news, lead-lag, CFD execution, tick-volume flow, jumps, multi-timeframe | 83 | -1.80 | 0.13 | 0.55 | 3 |
-| Machine learning and walk-forward | 34 | -0.76 | 0.16 | 0.07 | 1 |
+| Machine learning and walk-forward | 34 | -0.76 | 0.15 | 0.07 | 1 |
 | Risk, sizing, trade filters, portfolio blends | 47 | -0.31 | 0.16 | 0.01 | 1 |
 | Volatility estimators, regime-conditional, support/resistance and others | 20 | -0.46 | 0.03 | -0.26 | 0 |
 
@@ -375,7 +384,7 @@ Sharpe ratios are annualised from daily net returns. *Gross* is before any cost,
 | 103 | k-Nearest Neighbors Entry | `ml_knn` | -0.76 | 1.28 | -0.18 | -0.33 | -1.11 | -2.8 | -2.8 | real gross edge, eaten by costs |
 | 104 | Neural-Network Direction Model | `ml_mlp` | -1.34 | 0.81 | -0.75 | -0.64 | -1.89 | -4.7 | -4.8 | real gross edge, eaten by costs |
 | 105 | LSTM Sequence Model | `ml_lstm` | -1.03 | 0.14 | -0.56 | -0.96 | -1.06 | -3.7 | -4.4 | no edge (positive before costs, not significant) |
-| 106 | Transformer Time-Series Model | `ml_transformer` | -1.28 | 0.38 | -0.75 | -1.05 | -1.41 | -4.4 | -4.8 | no edge (positive before costs, not significant) |
+| 106 | Transformer Time-Series Model | `ml_transformer` | -1.15 | 0.17 | -0.67 | -0.87 | -1.32 | -3.8 | -4.6 | no edge (positive before costs, not significant) |
 | 107 | Reinforcement-Learning Entry | `rl_qlearn` | -0.31 | 0.08 | -0.22 | -0.14 | -0.76 | -1.2 | -1.0 | no edge (positive before costs, not significant) |
 | 108 | Ensemble Model Entry | `ml_ensemble` | -1.21 | 0.48 | -0.70 | -0.56 | -1.67 | -4.4 | -4.8 | no edge (positive before costs, not significant) |
 | 109 | Stacked Ensemble Entry | `ml_stacked` | -1.33 | 0.90 | -0.71 | -0.95 | -1.48 | -4.6 | -4.7 | real gross edge, eaten by costs |
@@ -621,7 +630,7 @@ Sharpe ratios are annualised from daily net returns. *Gross* is before any cost,
 | 349 | Ensemble Macro Model | `ensemble_macro` | -0.10 | 0.40 | 0.18 | 0.25 | -0.57 | -0.4 | -0.4 | no edge (positive before costs, not significant) |
 | 350 | Ensemble Cross-Asset Model | `ensemble_xasset` | -0.15 | 0.43 | 0.28 | -0.05 | -0.25 | -0.6 | -0.6 | no edge (positive before costs, not significant) |
 | 351 | Meta-Labeling | `meta_label` | 0.07 | 0.44 | 0.29 | 0.14 | 0.04 | 0.3 | 0.1 | positive both halves, not significant |
-| 352 | Triple-Barrier Entry Model | `triple_barrier` | -0.70 | -0.18 | -0.41 | -1.18 | -0.22 | -2.5 | -2.4 | no edge (negative even before costs) |
+| 352 | Triple-Barrier Entry Model | `triple_barrier` | -0.70 | -0.18 | -0.41 | -1.18 | -0.21 | -2.5 | -2.4 | no edge (negative even before costs) |
 | 353 | Event-Based Sampling Model | `cusum_event` | -1.06 | -0.17 | -0.65 | -1.21 | -0.90 | -4.5 | -4.6 | no edge (negative even before costs) |
 | 354 | Dollar-Bar Model | `dollar_bars` | -2.89 | 0.45 | -2.41 | -2.43 | -3.51 | -14.1 | -14.1 | real gross edge, eaten by costs (price x tick volume) |
 | 355 | Volatility-Bar Model | `vol_bars` | -0.99 | 0.03 | -0.57 | -0.94 | -1.06 | -4.5 | -4.5 | no edge (positive before costs, not significant) |
@@ -631,8 +640,8 @@ Sharpe ratios are annualised from daily net returns. *Gross* is before any cost,
 | 359 | Machine-Learned Probability-of-Return Model | `ml_prob_return` | -0.69 | 0.03 | -0.22 | -0.92 | -0.52 | -2.5 | -2.6 | no edge (positive before costs, not significant) |
 | 360 | Machine-Learned Probability-of-Breakout Model | `ml_prob_breakout` | -0.35 | 0.14 | -0.03 | -0.25 | -0.43 | -1.4 | -1.5 | no edge (positive before costs, not significant) |
 | 361 | Machine-Learned Probability-of-Reversal Model | `ml_prob_reversal` | -0.40 | -0.08 | -0.25 | -0.35 | -0.44 | -1.6 | -1.4 | no edge (negative even before costs) |
-| 362 | Machine-Learned Expected-Return Model | `ml_expected_return` | -0.76 | 0.10 | -0.17 | -0.55 | -0.92 | -2.8 | -2.7 | no edge (positive before costs, not significant) |
-| 363 | Machine-Learned Risk/Reward Model | `ml_risk_reward` | -0.55 | -0.23 | -0.37 | -1.14 | 0.01 | -2.0 | -2.3 | no edge (negative even before costs) |
+| 362 | Machine-Learned Expected-Return Model | `ml_expected_return` | -0.76 | 0.10 | -0.17 | -0.55 | -0.93 | -2.8 | -2.7 | no edge (positive before costs, not significant) |
+| 363 | Machine-Learned Risk/Reward Model | `ml_risk_reward` | -0.55 | -0.22 | -0.37 | -1.14 | 0.02 | -2.0 | -2.3 | no edge (negative even before costs) |
 | 364 | Expected-Value Optimization | `ev_optimization` | -0.65 | -0.02 | -0.43 | -0.57 | -0.72 | -2.5 | -3.0 | no edge (negative even before costs) |
 | 365 | Utility-Maximizing Entry | `utility_max` | -0.29 | 0.14 | 0.07 | -0.37 | -0.21 | -1.1 | -1.2 | no edge (positive before costs, not significant) |
 | 366 | Probability × Payoff Model | `prob_payoff` | -0.34 | 0.12 | -0.00 | -0.24 | -0.66 | -1.5 | -1.5 | no edge (positive before costs, not significant) |

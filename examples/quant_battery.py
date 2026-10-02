@@ -315,8 +315,17 @@ skill. Then the multiple-testing correction for having tried {N} distinct
 models. Parameters are textbook values fixed before any result was seen;
 everything that learns (ML, walk-forward, Bayesian, seasonal) is fitted
 only on data before the year it trades. A look-ahead audit
-(`examples/quant_audit.py`) re-runs every model on data cut at mid-2014 and
-checks every signal before the cut is identical.
+(`examples/quant_audit.py`) re-runs a model on data cut at mid-2014 and
+checks that every signal before the cut is identical to the full run. All
+330 non-ML models and 24 of the 34 ML and walk-forward models were audited
+(every distinct training pipeline; the other ten are different
+scikit-learn learners or blends inside an audited pipeline). The audit
+caught and this version fixes: full-sample scaling in the currency
+strength meter, the Kalman filters and three drawdown-limit sizers; a
+pairs normaliser and a NaN that wiped other pairs' positions; a random
+sampling stream in the DTW matcher; misaligned labels in the
+multi-timeframe probability model; one day of Q-learning reward across the
+train/test boundary; dropout left on when the Transformer predicted.
 
 **Result.** {n_pos} of {N} models have a positive net Sharpe ratio and
 {n_gpos} are positive before costs. {n_t2} {"has" if n_t2 == 1 else "have"}
