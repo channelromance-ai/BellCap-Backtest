@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//| DumpBars.mq5                                                       |
+//| BellCapExport.mq5                                                  |
 //| Export broker history for the BellCap quant battery.               |
 //|                                                                    |
 //| For every symbol (Market Watch, or the list you give) it writes   |
@@ -61,7 +61,7 @@ int OnStart()
       if(IsStopped())
          break;
      }
-   Print("DumpBars finished. Files are in MQL5\\Files\\", DIR);
+   Print("BellCapExport finished. Files are in MQL5\\Files\\", DIR);
    return 0;
   }
 
