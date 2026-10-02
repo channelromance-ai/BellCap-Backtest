@@ -292,7 +292,8 @@ def ml_stacked(X):
                                         ("gbm", _gbm), ("knn", _knn))}
     from sklearn.linear_model import LogisticRegression
     y = (X.R.shift(-1) > 0).astype(float).where(X.R.shift(-1).notna())
-    stack = pd.concat({k: v.stack() for k, v in base.items()}, axis=1)
+    stack = pd.concat({k: v.stack() for k, v in base.items()},
+                      axis=1).dropna()           # rows every learner scored
     yy = y.stack().reindex(stack.index)
     out = pd.Series(np.nan, index=stack.index)
     dates = stack.index.get_level_values(0)
@@ -370,6 +371,7 @@ def _event_rows(X, ev, hold):
     lp = np.log(X.C)
     fwd = (lp.shift(-hold) - lp)
     side = ev.stack()
+    side.index.names = ["date", "sym"]
     side = side[side != 0]
     rows = P.reindex(side.index).dropna(subset=feat_cols(P))
     rows = rows.copy()

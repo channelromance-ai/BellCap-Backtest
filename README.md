@@ -78,9 +78,30 @@ find one; score the search first and you learn whether picking was worth doing.
 | `bcbt.fills` | numba minute-resolution fill engine |
 | `bcbt.metrics` | R stats, bootstrap CIs, Reality Check, coin flip |
 | `bcbt.strategies` | Concrete rules, each returning a trade table |
+| `bcbt.oanda_data` | OANDA CFD history (25 instruments, 2005-2020) and VIX |
+| `bcbt.quant` | Vectorised signal engine for the quant battery: costs, financing, Reality Check, deflated Sharpe |
 
 Results are kept in **R** — multiples of the risk taken — so a 32-point S&P stop
 and a 162-point Nasdaq stop are the same unit and can be pooled.
+
+## The quant battery
+
+`examples/quant_battery.py` runs a list of 385 quant retail CFD models
+(mean reversion, pairs and stat arb, momentum and trend, breakouts,
+volatility and regime models, statistical forecasting, machine learning,
+seasonality, news events, lead-lag, tick-volume flow, sizing and
+prop-firm risk schemes) through one engine with one cost model, then
+corrects for having tried them all. Results: `docs/quant_battery.md`.
+
+```bash
+python -m bcbt.oanda_data            # data: ~190 MB from GitHub
+python -m examples.quant_battery     # every model, cached in out/quant/
+python -m examples.quant_audit       # look-ahead audit: cut the data, compare
+```
+
+Each model is a short function in `examples/quant/` that returns the
+position it wants at each bar's close; `examples/quant/registry.py` maps
+every name on the list to its test or to the reason it cannot be tested.
 
 ## Gotchas worth knowing
 

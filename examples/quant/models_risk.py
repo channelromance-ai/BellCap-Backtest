@@ -53,7 +53,8 @@ def _level(p):
     """Scale that puts the gross book at 10% annual vol, from the vol seen
     so far (expanding, from 20 days) -- never the full-sample figure."""
     sd = p.expanding(min_periods=20).std().shift(1) * math.sqrt(252)
-    return (0.10 / sd).fillna(1.0)
+    k = (0.10 / sd.where(sd > 0)).fillna(1.0)
+    return k.clip(upper=100)
 
 
 def _dd(series):
@@ -194,9 +195,10 @@ def es_sizing(X):
 @model("dd_adj_sizing", scale=False, agg="sum", base=BASE, norm=True)
 def dd_adj_sizing(X):
     """Drawdown-adjusted sizing: book size x (1 - drawdown / 15%), floored at
-    a quarter, using the unscaled strategy's own drawdown."""
+    a quarter, using the full-size book's own drawdown (at 10% vol)."""
     w = _vt_weights(X)
-    dd = _dd(_portfolio(X, w))
+    p = _portfolio(X, w)
+    dd = _dd(p * _level(p))                 # drawdown of the 10%-vol book
     return w.mul((1 - dd / 0.15).clip(0.25, 1), axis=0)
 
 
@@ -213,11 +215,13 @@ def dynamic_risk_sizing(X):
 @model("max_dd_aware", scale=False, agg="sum", base=BASE, norm=True)
 def max_dd_aware(X):
     """Maximum-drawdown-aware: size shrinks linearly to zero as the book's
-    drawdown approaches a 10% limit (of the 10%-vol book)."""
+    drawdown within the calendar year approaches a 10% limit (each year a
+    fresh account, as a funded account resets after a breach)."""
     w = _vt_weights(X)
-    p = _portfolio(X, w)
-    k = _level(p)
-    dd = _dd(p * k)
+    p = _portfolio(X, w) * _level(_portfolio(X, w))
+    yr = p.index.year
+    eq = p.fillna(0).groupby(yr).cumsum()
+    dd = eq.groupby(yr).cummax() - eq
     return w.mul((1 - dd / 0.10).clip(0, 1), axis=0)
 
 

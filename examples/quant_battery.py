@@ -172,11 +172,11 @@ def verdict(r, n_trials):
         return "positive both halves, not significant"
     if sh > 0:
         return "positive overall, fails one half"
-    if sg > 0.3 and r["t_gross"] >= 2:
-        return "gross edge, eaten by costs"
+    if sg > 0 and r["t_gross"] >= 2:
+        return "real gross edge, eaten by costs"
     if sg > 0:
-        return "no edge (gross barely positive)"
-    return "no edge"
+        return "no edge (positive before costs, not significant)"
+    return "no edge (negative even before costs)"
 
 
 # ------------------------------------------------------------------ report
@@ -274,6 +274,15 @@ def build_extras(df, meta, entries_):
     n_pos = int((T["sharpe"] > 0).sum())
     n_gpos = int((T["sharpe_gross"] > 0).sum())
     best = T["sharpe"].idxmax()
+    mods = {k: MODELS[k]["fn"].__module__.rsplit(".", 1)[-1] for k in T.index}
+    daily = [k for k in T.index if mods[k] in ("models_daily",
+                                               "models_xasset")
+             and T.loc[k, "exposure"] > 0.5]
+    fin_med = float((T.loc[daily, "sharpe_nofin"] -
+                     T.loc[daily, "sharpe"]).median())
+    pk = [k for k in T.index if MODELS[k]["agg"] == "sum" and
+          mods[k] == "models_xasset"]
+    fin_pairs = float((T.loc[pk, "sharpe_nofin"] - T.loc[pk, "sharpe"]).max())
     intro = f"""
 **Data.** OANDA's own CFD quotes (1-minute bars with tick volume) for 25
 instruments: S&P 500, Nasdaq 100, Russell 2000, FTSE 100, CAC 40, Nikkei
@@ -309,10 +318,40 @@ only on data before the year it trades. A look-ahead audit
 (`examples/quant_audit.py`) re-runs every model on data cut at mid-2014 and
 checks every signal before the cut is identical.
 
-**Result.** {n_pos} of {N} models have a positive net Sharpe; {n_gpos} are
-positive before costs. {n_t2} have a net t-statistic of 2 or more, and
-{n_t2_both} of those are positive in both halves. The best net Sharpe is
-`{best}` at {T.loc[best, "sharpe"]:.2f}.
+**Result.** {n_pos} of {N} models have a positive net Sharpe ratio and
+{n_gpos} are positive before costs. {n_t2} {"has" if n_t2 == 1 else "have"}
+a net t-statistic of 2 or more ({n_t2_both} positive in both halves). The
+best net Sharpe is `{best}` at {T.loc[best, "sharpe"]:.2f}, below the
+{meta.get("e_max", 0.75):.2f} that the best of {N} skill-less models is
+expected to reach by luck.
+
+## Bottom line
+
+* **No model on the list has a demonstrable edge on retail CFDs after
+  costs.** The best result is what luck alone produces when this many
+  models are tried (Reality Check p = {meta["p_rc"]:.2f}).
+* **Many signals are real before costs and die on them.**
+  {int((T["verdict"] == "real gross edge, eaten by costs").sum())} models have
+  a gross t of 2 or more and lose money net: hourly seasonality, lead-lag,
+  session patterns and daily machine-learning direction calls all predict
+  something, but by less than the spread they pay to act on it, and the
+  more often a model trades the bigger the gap.
+* **Overnight financing is the second tax.** For the daily models that are
+  in the market more than half the time, financing alone costs a median
+  {fin_med:.2f} of Sharpe; pairs pay it on both legs (up to {fin_pairs:.1f}).
+  Low-volatility CFDs (bonds, FX) need the most notional per unit of risk
+  and pay the most.
+* **Some of the few positive models are long equity risk in disguise.**
+  The volatility-risk-premium, equity-bond-regime and VIX-fear models move
+  0.7-0.9 with simply holding the same CFDs long, and their alpha t is
+  near zero. The others (month-of-year seasonality, the rates
+  differential, VIX vs realised volatility, the VIX-implied-move breach)
+  keep an alpha t of 1.3-2.2 after removing the long exposure, which is
+  not significant once {N} tries are accounted for.
+* **Sizing and risk rules cannot fix a signal without an edge.** At equal
+  volatility no sizing scheme turns the trend model positive in both
+  halves; drawdown and loss-limit rules change which days are lost, not
+  whether money is made.
 """
     vc = T["verdict"].value_counts()
     nr = len([1 for _, k, _ in entries_ if k is None])
@@ -325,10 +364,11 @@ With {N} models and no edge anywhere, about {exp_t2:.0f} would still show a
 one-sided t of 2 by luck (2.5% each). {n_t2} did. White's Reality Check on
 the best daily net stream (`{meta["best"]}`, Sharpe {meta["best_sr"]:.2f})
 against the best of {N} demeaned, block-bootstrapped streams: p =
-{meta["p_rc"]:.3f}. The deflated Sharpe ratio, which asks how likely the
-top Sharpe is to be real once it is known to be the best of {N} tries with
-this spread of results, is in the `dsr` column of `out/quant/results.csv`;
-a model needs dsr > 0.95 to be called an edge here.
+{meta["p_rc"]:.3f}. The deflated Sharpe ratio (Bailey and Lopez de Prado)
+asks how likely a Sharpe ratio is to be real once it is known to be the
+best of {N} tries: with ~15 years of daily data and no skill anywhere, the
+best of {N} would still reach a Sharpe of about {meta.get("e_max", 0.7):.2f}
+by chance. A model needs dsr > 0.95 to be called an edge here.
 """
     secs = []
     # 1. cost
@@ -377,7 +417,10 @@ a model needs dsr > 0.95 to be called an edge here.
             "is rescaled to 10% realised volatility, so the comparison is at "
             "equal risk. *Prop pass / bust* is the share of 60-day windows, "
             "one starting every month, that reach +8% before a 10% loss or a "
-            "5% losing day.\n\n" +
+            "5% losing day. At 10% volatility a simulated stream with no "
+            "edge passes about 10% of windows (4-16% across 20 simulated "
+            "histories), so every scheme here, at 3-7%, does no better than "
+            "luck and mostly worse.\n\n" +
             table(S, ["sharpe", "sharpe_dev", "sharpe_hold", "max_dd",
                       "worst_day", "prop_pass", "prop_bust"],
                   ["Scheme", "Net", "Dev", "Hold", "Max DD", "Worst day",
@@ -392,7 +435,11 @@ a model needs dsr > 0.95 to be called an edge here.
             "Filters and overlays against the model they modify",
             "Δ is the change in net Sharpe versus the unfiltered base, "
             "overall and in each half. A filter that helps should help in "
-            "both.\n\n" +
+            "both. The trade filters' base, a 20-day Donchian breakout with "
+            f"a 2-ATR stop, nets {fmt(df.loc['trade_base', 'sharpe'])}; the "
+            "filters that stop taking trades after a run of losses (profit "
+            "factor, expectancy, risk of ruin) improve it in both halves, "
+            "largely by trading less, and still leave it below zero.\n\n" +
             table(O.sort_values("d_sharpe_vs_base", ascending=False),
                   ["base", "sharpe", "d_sharpe_vs_base", "d_dev_vs_base",
                    "d_hold_vs_base"],
@@ -480,7 +527,10 @@ def main():
         d = streams[r["model"]]["net"]
         d = d[d.index >= pd.Timestamp(r["start"])]
         from scipy.stats import skew, kurtosis
-        r["dsr"] = Q.deflated_sharpe(r["sharpe"], len(d), N, var_tr,
+        # Null: no model has skill, so the spread of the N Sharpe ratios is
+        # their estimation noise, 1/T per day (the cross-model variance
+        # would be dominated by the hourly models' cost-driven -20s).
+        r["dsr"] = Q.deflated_sharpe(r["sharpe"], len(d), N, 252 / len(d),
                                      float(skew(d)),
                                      float(kurtosis(d, fisher=False)))
         r["verdict"] = verdict(r, N)
@@ -499,8 +549,12 @@ def main():
     df = pd.DataFrame(rows).set_index("model")
     df.to_csv(os.path.join(OUT, "results.csv"))
     with open(os.path.join(OUT, "meta.pkl"), "wb") as f:
+        from scipy.stats import norm
+        g = 0.5772156649
+        e_max = math.sqrt(252 / 3900) * ((1 - g) * norm.ppf(1 - 1 / N) +
+                                         g * norm.ppf(1 - 1 / (N * math.e)))
         pickle.dump(dict(best=best, best_sr=best_sr, p_rc=p_rc, null=null,
-                         N=N, var_tr=var_tr, errors=errors), f)
+                         N=N, var_tr=var_tr, errors=errors, e_max=e_max), f)
     print(df[["sharpe", "sharpe_gross", "sharpe_dev", "sharpe_hold", "t",
               "alpha_t", "dsr", "verdict"]].sort_values("sharpe").to_string())
     print("reality check: best", best, f"{best_sr:.2f}", "p =", p_rc)

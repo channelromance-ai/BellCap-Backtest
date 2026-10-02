@@ -1624,7 +1624,6 @@ def dtw_pattern(X):
         return D[n, n]
 
     win, horizon, k = 15, 5, 20
-    rng = np.random.default_rng(0)
     out = pd.DataFrame(0.0, index=X.C.index, columns=X.C.columns)
     lp = np.log(X.C)
     for c in X.C.columns:
@@ -1641,6 +1640,9 @@ def dtw_pattern(X):
             if not np.isfinite(q).all():
                 continue
             last = i - horizon - win + 1
+            # a fixed sample per (instrument, date), so it never depends on
+            # how much history comes after
+            rng = np.random.default_rng([X.C.columns.get_loc(c), i])
             idx = rng.choice(last, size=min(1500, last), replace=False)
             cf = fut[idx + win - 1]
             g = np.isfinite(Wn[idx]).all(1) & np.isfinite(cf)
