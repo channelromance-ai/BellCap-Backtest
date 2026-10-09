@@ -23,7 +23,7 @@
 //| Only positions with this expert's two magic numbers are touched. |
 //+------------------------------------------------------------------+
 #property copyright "BellCap-Backtest"
-#property version   "2.01"
+#property version   "2.02"
 
 #include <Trade\Trade.mqh>
 
@@ -71,6 +71,16 @@ input int    SpxEarlyCloseMin  = 45;
 
 input int    MaxLateMinutes    = 30;       // never enter later than this
 input double SlippageAllowPips = 2.0;
+
+//--- phone notifications (MetaQuotes ID set in Tools > Options >
+//--- Notifications). On MetaQuotes' VPS the expert's files cannot be seen
+//--- from home, so these messages ARE the watchdog: a missing status
+//--- message means the expert is not running.
+input bool   PushEnabled       = true;
+input int    StatusHour1       = 0;        // 00:45 server = 16:45 Winnipeg
+input int    StatusMin1        = 45;
+input int    StatusHour2       = 5;        // 05:45 server = 21:45 Winnipeg
+input int    StatusMin2        = 45;
 
 CTrade trade;
 string LOG_FILE = "BellCapDual_log.csv";
@@ -214,6 +224,71 @@ void Log(string leg, string event, string detail, double lots = 0,
              DryRun ? "yes" : "no");
    FileClose(h);
    Print("BCD ", leg, " ", event, ": ", detail);
+   // Phone: everything that matters, nothing routine. DRY-* lines are not
+   // pushed (they fire every day in practice mode); real trades, closes,
+   // skips, errors, warnings and start/stop are.
+   if(event == "BUY" || event == "SELL" || event == "CLOSE" ||
+      event == "SKIP" || event == "ERROR" || event == "WARNING" ||
+      event == "START" || event == "STOP")
+     {
+      string msg = StringFormat("BCD %s %s: %s", leg, event, detail);
+      if(event == "CLOSE")
+         msg += StringFormat(" | P&L $%.2f | bal $%.2f", pnl + comm,
+                             AccountInfoDouble(ACCOUNT_BALANCE));
+      Notify(msg);
+     }
+  }
+
+//--- send to the phone; MT5 allows a few per minute and 255 characters
+void Notify(string msg)
+  {
+   if(!PushEnabled || MQLInfoInteger(MQL_TESTER))
+      return;
+   if(StringLen(msg) > 250)
+      msg = StringSubstr(msg, 0, 250);
+   if(!SendNotification(msg))
+      Print("BCD push failed (", GetLastError(), "): check Tools > Options > "
+            "Notifications and the MetaQuotes ID");
+  }
+
+string PositionState(string sym, long magic, string leg)
+  {
+   ulong tk;
+   if(!FindPosition(sym, magic, tk))
+      return leg + ": none open";
+   return StringFormat("%s: %s %.2f, P&L $%.2f", leg,
+                       PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY
+                       ? "long" : "short", PositionGetDouble(POSITION_VOLUME),
+                       PositionGetDouble(POSITION_PROFIT));
+  }
+
+//--- the twice-daily "I am alive" message: its absence is the alarm
+void StatusPush(datetime now)
+  {
+   MqlDateTime t;
+   TimeToStruct(now, t);
+   if(t.day_of_week < 1 || t.day_of_week > 5)
+      return;
+   int slot = 0;
+   if(t.hour == StatusHour1 && t.min >= StatusMin1)
+      slot = 1;
+   else if(t.hour == StatusHour2 && t.min >= StatusMin2)
+      slot = 2;
+   if(slot == 0)
+      return;
+   string gv = StringFormat("BCD_status_%d", slot);
+   if(GlobalVariableCheck(gv) && (datetime)GlobalVariableGet(gv) ==
+      DayStart(now))
+      return;
+   GlobalVariableSet(gv, (double)DayStart(now));
+   Notify(StringFormat("BCD %s | bal $%.2f eq $%.2f | %s | %s | algo %s",
+                       DryRun ? "DRY-RUN (not trading)" : "live",
+                       AccountInfoDouble(ACCOUNT_BALANCE),
+                       AccountInfoDouble(ACCOUNT_EQUITY),
+                       PositionState(SpxSymbol, SpxMagic, "SPX"),
+                       PositionState(EurSymbol, EurMagic, "EUR"),
+                       TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ? "on"
+                       : "OFF"));
   }
 
 void Heartbeat()
@@ -288,7 +363,7 @@ int OnInit()
    int spx_l = (SpxEntryHour - ServerMinusLocal + 24) % 24;
    int spx_x = (SpxCloseHour - ServerMinusLocal + 24) % 24;
    Log("ALL", "START", StringFormat(
-          "v2.01 EUR %s %.2f lots %02d:00->%02d:00 Winnipeg | SPX %s "
+          "v2.02 EUR %s %.2f lots %02d:00->%02d:00 Winnipeg | SPX %s "
           "%.2f%% swing target %02d:00->%02d:%02d Winnipeg, stop $%.0f | "
           "floor %.0f target %.0f daily %.0f",
           EurEnabled ? "on" : "off", EurBaseLots, eur_l, eur_x,
@@ -316,6 +391,7 @@ void OnTimer()
   {
    Heartbeat();
    datetime now = TimeTradeServer();
+   StatusPush(now);
    if(EurEnabled)
       EurCheck(now);
    if(SpxEnabled)
