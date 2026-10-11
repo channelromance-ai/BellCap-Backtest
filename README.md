@@ -68,6 +68,23 @@ print(metrics.coin_flip(trades, cost_pts=1.5))
 operations there is the point: pick the best cell first and you will always
 find one; score the search first and you learn whether picking was worth doing.
 
+### NAS100 ORB + 12 EMA, 1R trail
+
+The 09:30-10:00 range, side from the 10:00 close against the 12 EMA, stop
+beyond the far side of the range, breakeven at +1R then a 1R trail, flat at
+the close (`bcbt/strategies/orb_trail.py`). The study scores the rules as
+written, then tests the direction call against a coin, the trail against
+other exits, a 96-cell neighbourhood with the Reality Check, costs, the
+optional filters out of sample, account sizing under a leverage cap, and
+look-ahead. It keeps its own long-history store so the pinned numbers in
+`tests/test_reproduces.py` are untouched:
+
+```bash
+python -m bcbt.fetch --symbols NAS100 --start 2013-01-01 --ask \
+    --out data/nas_m1_long.parquet
+python examples/orb_ema_trail.py --data data/nas_m1_long.parquet
+```
+
 ## Layout
 
 | Module | Does |

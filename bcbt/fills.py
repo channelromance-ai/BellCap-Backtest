@@ -34,7 +34,9 @@ OPEN = -1
 STOP = 0
 TARGET = 1
 BREAKEVEN = 2
-REASONS = {OPEN: "open", STOP: "stop", TARGET: "target", BREAKEVEN: "be"}
+TRAIL = 3
+REASONS = {OPEN: "open", STOP: "stop", TARGET: "target", BREAKEVEN: "be",
+           TRAIL: "trail"}
 
 
 @njit(cache=True)
@@ -144,6 +146,112 @@ def resolve(o, h, l, i0, i1, d, entry, stop, risk, target, be_mult,
 
 
 @njit(cache=True)
+def resolve_trail(o, h, l, i0, i1, d, entry, stop, risk, act_r, trail_r,
+                  target=0.0, stop_first=True):
+    """
+    Walk 1-minute bars i0..i1 under a stop that is managed in two stages.
+
+    Until the trade has been `act_r` R onside the initial stop stays where
+    it is. From the bar that reaches that point the stop moves to entry,
+    then follows the best price since entry at `trail_r` R behind it, and
+    only ever tightens. This differs from `resolve(trail_mult=...)`, which
+    trails from the first bar and so tightens the stop long before the
+    trade has earned anything.
+
+    `act_r` 0.0 leaves the initial stop alone all day; `trail_r` 0.0 with
+    `act_r` > 0 is a plain breakeven move. `target` 0.0 means no target.
+
+    The intrabar order problem. A minute bar that pushes the stop up (by
+    arming, or by a new extreme) and also trades back through the new stop
+    cannot say which came first. With `stop_first` the exit is taken at the
+    new stop; without it the bar is read low-then-high and the position
+    survives. Either way the bar is flagged ambiguous, so running both
+    bounds the effect. The same flag covers a bar holding both stop and
+    target, and is returned set if any bar of the trade was such a bar.
+
+    Returns
+    -------
+    (exit_index, exit_price, reason, ambiguous, armed, mfe, mae)
+        reason is STOP before the trade armed and TRAIL after it; OPEN with
+        exit_index -1 if the window ended first. mfe and mae are the best
+        and worst excursions in price points, both >= 0.
+    """
+    cur = stop
+    armed = False
+    best = entry
+    mfe = 0.0
+    mae = 0.0
+    amb = False
+
+    for j in range(i0, i1 + 1):
+        if d > 0:
+            fav = h[j] - entry
+            adv = entry - l[j]
+            hit_stop = l[j] <= cur
+            hit_tgt = target > 0.0 and h[j] >= target
+        else:
+            fav = entry - l[j]
+            adv = h[j] - entry
+            hit_stop = h[j] >= cur
+            hit_tgt = target > 0.0 and l[j] <= target
+        if fav > mfe:
+            mfe = fav
+        if adv > mae:
+            mae = adv
+        why = TRAIL if armed else STOP
+
+        if hit_stop and hit_tgt:
+            if stop_first:
+                return j, cur, why, True, armed, mfe, mae
+            return j, target, TARGET, True, armed, mfe, mae
+
+        if hit_stop:
+            if d > 0:
+                px = o[j] if o[j] < cur else cur
+            else:
+                px = o[j] if o[j] > cur else cur
+            return j, px, why, amb, armed, mfe, mae
+
+        if hit_tgt:
+            if d > 0:
+                px = o[j] if o[j] > target else target
+            else:
+                px = o[j] if o[j] < target else target
+            return j, px, TARGET, amb, armed, mfe, mae
+
+        if act_r <= 0.0:
+            continue
+
+        if d > 0:
+            if h[j] > best:
+                best = h[j]
+        else:
+            if l[j] < best:
+                best = l[j]
+
+        moved = False
+        if not armed and fav >= act_r * risk:
+            armed = True
+            if (d > 0 and entry > cur) or (d < 0 and entry < cur):
+                cur = entry
+                moved = True
+        if armed and trail_r > 0.0:
+            lifted = best - d * trail_r * risk
+            if (d > 0 and lifted > cur) or (d < 0 and lifted < cur):
+                cur = lifted
+                moved = True
+
+        if moved:
+            inside = (l[j] <= cur) if d > 0 else (h[j] >= cur)
+            if inside:
+                amb = True
+                if stop_first:
+                    return j, cur, TRAIL, True, armed, mfe, mae
+
+    return -1, 0.0, OPEN, amb, armed, mfe, mae
+
+
+@njit(cache=True)
 def first_touch(h, l, i0, i1, d, level):
     """Index of the first bar in i0..i1 to trade at `level`, or -1."""
     for j in range(i0, i1 + 1):
@@ -165,4 +273,5 @@ def warm():
     """
     z = np.zeros(4, np.float64)
     resolve(z, z, z, 0, 3, 1, 1.0, 0.5, 0.5, 0.0, 0.0, False, 0.0, 0.0)
+    resolve_trail(z, z, z, 0, 3, 1, 1.0, 0.5, 0.5, 1.0, 1.0, 0.0, True)
     first_touch(z, z, 0, 3, 1, 1.0)
