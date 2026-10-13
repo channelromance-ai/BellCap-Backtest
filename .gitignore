@@ -20,3 +20,6 @@ out/
 .env
 
 data/*.parquet
+
+# Momentum backtest: downloaded prices are cached here, not committed.
+data/momentum_cache/
